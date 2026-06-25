@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Timer + GPS Run</title>
+
+<!-- Leaflet (hartă) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<style>
+
+html, body {
+    height: 100%;
+    margin: 0;
+    background: #0a0505;
+    font-family: Arial;
+    color: white;
+}
+
+/* HARTA CHENAR MARE */
+#map {
+    width: 95%;
+    height: 300px;
+    margin: 15px auto 10px auto;
+    border-radius: 18px;
+    border: 2px solid rgba(255,255,255,0.15);
+}
+
+/* container */
+.container{
+    width: 100%;
+    max-width: 700px;
+    margin: auto;
+    text-align: center;
+}
+
+/* DISTANȚĂ */
+#distance {
+    font-size: 22px;
+    margin-bottom: 10px;
+    color: #7CFF6B;
+}
+
+/* TIMER */
+.timer{
+    font-size: 60px;
+    font-weight: bold;
+    color: #7CFF6B;
+}
+
+.subtitle{
+    margin-top: 5px;
+    margin-bottom: 15px;
+    color: #ccc;
+}
+
+/* TABLE */
+table{
+    width: 95%;
+    margin: auto;
+    border-collapse: collapse;
+    background: rgba(0,0,0,0.3);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+td, th{
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+/* BUTTONS */
+.buttons{
+    position: fixed;
+    bottom: 20px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+}
+
+button{
+    padding: 14px 30px;
+    border-radius: 999px;
+    border: none;
+    font-size: 16px;
+}
+
+.start{ background: #1ed760; }
+.reset{ background: #444; color: white; }
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- HARTA -->
+    <div id="map"></div>
+
+    <!-- DISTANȚĂ -->
+    <div id="distance">Distanță: 0 m</div>
+
+    <!-- TIMER -->
+    <div class="timer" id="timer">02:05</div>
+    <div class="subtitle" id="currentLap">Tura 1 / 4</div>
+
+    <table>
+        <tr><th>Tură</th><th>Status</th></tr>
+        <tr><td>1</td><td id="s1">Pregătită</td></tr>
+        <tr><td>2</td><td id="s2">Pregătită</td></tr>
+        <tr><td>3</td><td id="s3">Pregătită</td></tr>
+        <tr><td>4</td><td id="s4">Pregătită</td></tr>
+    </table>
+
+</div>
+
+<div class="buttons">
+    <button class="reset" onclick="resetAll()">Reset</button>
+    <button class="start" onclick="startRun()">Start</button>
+</div>
+
+<script>
+
+/* ===== TIMER ===== */
+let lapTime = 125;
+let remaining = lapTime;
+let lap = 1;
+let running = false;
+let interval;
+
+function updateTimer(){
+    let m = Math.floor(remaining/60);
+    let s = remaining%60;
+    document.getElementById("timer").innerHTML =
+    String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+}
+
+/* ===== MAP ===== */
+let map = L.map('map').setView([44.43, 26.10], 16);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: 'OSM'
+}).addTo(map);
+
+let marker = null;
+let path = [];
+let polyline = L.polyline(path, {color: 'lime'}).addTo(map);
+
+/* ===== GPS ===== */
+let lastPos = null;
+let totalDistance = 0;
+
+function toRad(v){ return v * Math.PI / 180; }
+
+function getDistance(a, b){
+    const R = 6371000;
+    let dLat = toRad(b.lat - a.lat);
+    let dLon = toRad(b.lng - a.lng);
+
+    let x =
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+
+    let c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+    return R * c;
+}
+
+function startGPS(){
+    navigator.geolocation.watchPosition(pos => {
+
+        let lat = pos.coords.latitude;
+        let lng = pos.coords.longitude;
+
+        let current = {lat, lng};
+
+        if(!marker){
+            marker = L.marker(current).addTo(map);
+            map.setView(current, 17);
+        } else {
+            marker.setLatLng(current);
+        }
+
+        path.push(current);
+        polyline.setLatLngs(path);
+
+        if(lastPos){
+            totalDistance += getDistance(lastPos, current);
+            document.getElementById("distance").innerText =
+            "Distanță: " + totalDistance.toFixed(0) + " m";
+        }
+
+        lastPos = current;
+
+    }, err => {
+        alert("GPS dezactivat sau fără permisiune");
+    }, {enableHighAccuracy:true});
+}
+
+/* ===== TIMER LOGIC ===== */
+function startRun(){
+
+    if(!running){
+        running = true;
+        startGPS();
+
+        interval = setInterval(()=>{
+
+            remaining--;
+            updateTimer();
+
+            if(remaining <= 0){
+
+                document.getElementById("s"+lap).innerText = "Finalizată";
+
+                if(lap === 4){
+                    clearInterval(interval);
+                    return;
+                }
+
+                lap++;
+                remaining = lapTime;
+            }
+
+        },1000);
+    }
+}
+
+function resetAll(){
+    location.reload();
+}
+
+updateTimer();
+
+</script>
+
+</body>
+</html>
